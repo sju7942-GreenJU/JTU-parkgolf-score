@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>파크골프 기록지</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; max-width: 100%; overflow-x: hidden; }
+body { font-family: system-ui, -apple-system, "Malgun Gothic", sans-serif; background: #f3f7f2; color: #1d2b1f; font-size: 16px; }
+.wrap { width: 100%; max-width: 720px; margin: 0 auto; padding: 12px; }
+h1 { font-size: 1.4rem; margin: 8px 0 12px; }
+h2 { font-size: 1.1rem; margin: 0 0 8px; }
+.card { background: #fff; border-radius: 10px; padding: 12px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); max-width: 100%; }
+.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.field input { font-size: 16px; padding: 8px; min-height: 44px; width: 100%; max-width: 100%; border: 1px solid #9bb39f; border-radius: 6px; }
+.stroke, .ob-btn, .btn { min-height: 44px; min-width: 44px; font-size: 16px; }
+.btn { padding: 8px 14px; border: 0; border-radius: 8px; background: #2f7d3b; color: #fff; max-width: 100%; }
+details summary { cursor: pointer; font-weight: 600; min-height: 44px; display: flex; align-items: center; }
+.hint { font-size: .9rem; color: #555; margin: 6px 0; }
+.par-grid { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+.par-item { display: flex; align-items: center; gap: 4px; }
+.par-select { min-height: 44px; min-width: 44px; font-size: 16px; max-width: 100%; border: 1px solid #9bb39f; border-radius: 6px; background: #fff; }
+.hole { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 0; border-bottom: 1px solid #e3ebe4; }
+.hole-no { font-weight: 700; width: 2.4em; }
+.stroke { width: 3.6em; padding: 6px; text-align: center; border: 1px solid #9bb39f; border-radius: 6px; }
+.stroke.invalid { border-color: #c62828; background: #fdecea; }
+.ob { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.ob-btn { border: 1px solid #9bb39f; background: #eef5ef; border-radius: 6px; color: #1d2b1f; }
+.ob-count { min-width: 4.5em; text-align: center; font-size: .9rem; }
+.result { flex: 1 1 8em; font-size: .95rem; }
+.summary { display: flex; flex-wrap: wrap; gap: 8px; }
+.sum-box { flex: 1 1 8em; background: #eef5ef; border-radius: 8px; padding: 8px; }
+.sum-box strong { display: block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>파크골프 기록지</h1>
+<section class="card">
+<div class="field"><label for="player-name">선수 이름</label><input id="player-name" type="text" placeholder="이름 입력" autocomplete="name"></div>
+<div class="field"><label for="play-date">날짜</label><input id="play-date" type="date"></div>
+<button type="button" id="load-example" class="btn">연습 예시 불러오기</button>
+<button type="button" id="new-game" class="btn">새 경기 시작</button>
+<p id="save-status" class="hint" role="status" aria-live="polite"></p>
+<p id="sw-status" class="hint" role="status" aria-live="polite"></p>
+</section>
+<section class="card" aria-live="polite">
+<h2>집계</h2>
+<div class="summary">
+<div class="sum-box"><strong>A코스</strong><div>기준 PAR 합계: <span id="par-sum-A">-</span></div><div>실제 경기 타수 합계: <span id="sum-A">0타</span> · <span id="cnt-A">0/9</span> · PAR 대비 <span id="vs-A">-</span></div></div>
+<div class="sum-box"><strong>B코스</strong><div>기준 PAR 합계: <span id="par-sum-B">-</span></div><div>실제 경기 타수 합계: <span id="sum-B">0타</span> · <span id="cnt-B">0/9</span> · PAR 대비 <span id="vs-B">-</span></div></div>
+<div class="sum-box"><strong>전체</strong><div>기준 PAR 합계: <span id="par-sum-T">-</span></div><div>실제 경기 타수 합계: <span id="sum-T">0타</span> · <span id="cnt-T">0/18</span> · PAR 대비 <span id="vs-T">-</span></div></div>
+</div>
+<p class="hint">타수는 1 이상의 정수만 유효합니다. OB 1회당 2타 벌타가 붙습니다.</p>
+</section>
+<details class="card" id="par-settings">
+<summary>PAR 설정</summary>
+<p class="hint">각 홀 행에서 PAR를 직접 선택합니다. 아래는 현재 PAR 요약입니다.</p>
+<h2>A코스 PAR</h2><div class="par-grid" id="par-A"></div>
+<h2>B코스 PAR</h2><div class="par-grid" id="par-B"></div>
+</details>
+<section class="card"><h2>A코스</h2><div id="holes-A"></div></section>
+<section class="card"><h2>B코스</h2><div id="holes-B"></div></section>
+</div>
+<script>
+// ==PURE-START==
+var COURSES = ['A', 'B'];
+var HOLES = 9;
+var EXAMPLE_A = [
+  { par: '3', strokes: '2', ob: 0 },
+  { par: '5', strokes: '3', ob: 0 },
+  { par: '4', strokes: '4', ob: 1 },
+  { par: '4', strokes: '4', ob: 0 },
+  { par: '5', strokes: '', ob: 0 },
+  { par: '4', strokes: '', ob: 0 },
+  { par: '3', strokes: '', ob: 0 },
+  { par: '4', strokes: '', ob: 0 },
+  { par: '4', strokes: '', ob: 0 }
+];
+var EXAMPLE_B = ['3', '4', '4', '3', '5', '4', '4', '4', '5'];
+function parseStrokes(raw) {
+  var s = raw == null ? '' : String(raw).trim();
+  if (s === '') return { status: 'empty', value: null };
+  if (!/^[0-9]+$/.test(s)) return { status: 'invalid', value: null };
+  var n = Number(s);
+  if (!Number.isInteger(n) || n < 1) return { status: 'invalid', value: null };
+  return { status: 'valid', value: n };
+}
+function parsePar(p) {
+  var s = p == null ? '' : String(p).trim();
+  return (s === '3' || s === '4' || s === '5') ? parseInt(s, 10) : null;
+}
+function obChange(ob, delta) {
+  var v = Math.floor(Number(ob) || 0) + delta;
+  return v < 0 ? 0 : v;
+}
+function formatVsPar(d) {
+  if (d === 0) return 'P';
+  if (d === -1) return '버디';
+  if (d === -2) return '이글';
+  return d > 0 ? '+' + d : String(d);
+}
+function formatTotalVsPar(d) {
+  if (d === 0) return '±0';
+  return d > 0 ? '+' + d : String(d);
+}
+function formatHoleVsPar(d) {
+  if (d === 0) return '±0';
+  return d > 0 ? '+' + d : '−' + Math.abs(d);
+}
+function holeTerm(strokes, ob, vsPar) {
+  if (strokes === 1 && ob === 0) return '홀인원';
+  if (vsPar === -3) return '알바트로스';
+  if (vsPar === -2) return '이글';
+  if (vsPar === -1) return '버디';
+  if (vsPar === 0) return '파';
+  if (vsPar === 1) return '보기';
+  if (vsPar === 2) return '더블 보기';
+  if (vsPar === 3) return '트리플 보기';
+  return '';
+}
+function holeResult(hole) {
+  var p = parseStrokes(hole.strokes);
+  var par = parsePar(hole.par);
+  var ob = Math.max(0, Math.floor(Number(hole.ob) || 0));
+  var r = { status: p.status, strokes: p.value, par: par, ob: ob, penalty: ob * 2, final: null, vsPar: null, label: '', term: '', text: '' };
+  if (p.status === 'empty') { r.label = '미입력'; r.text = '미입력'; return r; }
+  if (p.status === 'invalid') { r.label = '오류: 1 이상 정수만 입력'; r.text = '오류: 1 이상 정수만 입력'; return r; }
+  r.final = p.value + r.penalty;
+  if (par === null) { r.label = 'PAR 미설정'; r.text = r.final + '타 · PAR 미설정'; return r; }
+  r.vsPar = r.final - par;
+  r.label = formatVsPar(r.vsPar);
+  r.term = holeTerm(p.value, ob, r.vsPar);
+  r.text = r.final + '타 · ' + formatHoleVsPar(r.vsPar) + (r.term ? ' · ' + r.term : '');
+  return r;
+}
+function aggregate(results) {
+  var total = 0, count = 0, parSum = 0, parMissing = false, basePar = 0, baseParCount = 0;
+  for (var i = 0; i < results.length; i++) {
+    var r = results[i];
+    if (r.par !== null) { basePar += r.par; baseParCount += 1; }
+    if (r.status !== 'valid') continue;
+    total += r.final; count += 1;
+    if (r.par === null) parMissing = true; else parSum += r.par;
+  }
+  var vsPar = (count === 0 || parMissing) ? null : total - parSum;
+  var label = count === 0 ? '-' : (parMissing ? 'PAR 미설정' : formatTotalVsPar(vsPar));
+  var baseParLabel = baseParCount === 0 ? '-' : String(basePar);
+  return { total: total, count: count, size: results.length, vsPar: vsPar, parMissing: parMissing, label: label, basePar: basePar, baseParCount: baseParCount, baseParLabel: baseParLabel };
+}
+function formatCount(a) { return a.count + '/' + a.size; }
+function createState() {
+  var s = {};
+  COURSES.forEach(function (c) {
+    s[c] = [];
+    for (var i = 0; i < HOLES; i++) s[c].push({ par: '', strokes: '', ob: 0 });
+  });
+  return s;
+}
+function hasRecords(s) {
+  return COURSES.some(function (c) {
+    return s[c].some(function (h) {
+      return String(h.strokes == null ? '' : h.strokes).trim() !== '' || (Number(h.ob) || 0) > 0 || parsePar(h.par) !== null;
+    });
+  });
+}
+function applyExample() {
+  var s = createState();
+  EXAMPLE_A.forEach(function (h, i) { s.A[i] = { par: h.par, strokes: h.strokes, ob: h.ob }; });
+  EXAMPLE_B.forEach(function (p, i) { s.B[i] = { par: p, strokes: '', ob: 0 }; });
+  return s;
+}
+function setStrokes(s, c, i, raw) {
+  var h = s[c][i];
+  h.strokes = raw == null ? '' : String(raw);
+  if (h.strokes.trim() === '') h.ob = 0;
+  return s;
+}
+function computeAll(s) {
+  var res = {};
+  var all = [];
+  COURSES.forEach(function (c) {
+    var holes = s[c].map(function (h) { return holeResult(h); });
+    all = all.concat(holes);
+    res[c] = { holes: holes, agg: aggregate(holes) };
+  });
+  res.total = aggregate(all);
+  return res;
+}
+function todayISO(d) {
+  function p(n) { return (n < 10 ? '0' : '') + n; }
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+var STORAGE_KEY = 'parkgolf-scorecard:v1';
+function serializeGame(s, name, date) {
+  var holes = [];
+  COURSES.forEach(function (c) {
+    s[c].forEach(function (h) {
+      holes.push({ par: String(h.par == null ? '' : h.par), strokes: String(h.strokes == null ? '' : h.strokes), ob: Math.max(0, Math.floor(Number(h.ob) || 0)) });
+    });
+  });
+  return { version: 1, name: String(name == null ? '' : name), date: String(date == null ? '' : date), holes: holes };
+}
+function isPlainObject(v) {
+  return v !== null && typeof v === 'object' && Object.prototype.toString.call(v) === '[object Object]';
+}
+function deserializeGame(d) {
+  if (!isPlainObject(d) || d.version !== 1) return null;
+  if (d.name !== undefined && typeof d.name !== 'string') return null;
+  if (d.date !== undefined && typeof d.date !== 'string') return null;
+  if (Object.prototype.toString.call(d.holes) !== '[object Array]' || d.holes.length !== COURSES.length * HOLES) return null;
+  var s = createState();
+  for (var k = 0; k < d.holes.length; k++) {
+    var h = d.holes[k];
+    var c = COURSES[Math.floor(k / HOLES)];
+    if (!isPlainObject(h)) return null;
+    if (h.hole !== undefined && h.hole !== c + (k % HOLES + 1)) return null;
+    if (typeof h.par !== 'string' || !/^[345]?$/.test(h.par)) return null;
+    if (typeof h.strokes !== 'string') return null;
+    if (typeof h.ob !== 'number' || !isFinite(h.ob) || h.ob < 0 || Math.floor(h.ob) !== h.ob) return null;
+    s[c][k % HOLES] = { par: h.par, strokes: h.strokes, ob: h.ob };
+  }
+  return { state: s, name: typeof d.name === 'string' ? d.name : '', date: typeof d.date === 'string' ? d.date : '' };
+}
+// ==PURE-END==
+var state = createState();
+var refs = { A: [], B: [] };
+function el(tag, cls, text) {
+  var e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+function setText(id, t) { document.getElementById(id).textContent = t; }
+function button(cls, text, label, onClick) {
+  var b = el('button', cls, text);
+  b.type = 'button';
+  b.setAttribute('aria-label', label);
+  b.addEventListener('click', onClick);
+  return b;
+}
+function buildHole(c, i, parBox, body) {
+  var name = c + (i + 1);
+  var ref = {};
+  var row = el('div', 'hole');
+  row.appendChild(el('span', 'hole-no', name));
+  var sel = el('select', 'par-select');
+  ['', '3', '4', '5'].forEach(function (v) {
+    var o = el('option', null, v === '' ? '미설정' : 'PAR ' + v);
+    o.value = v;
+    sel.appendChild(o);
+  });
+  sel.setAttribute('aria-label', name + '홀 PAR');
+  sel.addEventListener('change', function () { state[c][i].par = sel.value; commit(); });
+  row.appendChild(sel);
+  ref.par = sel;
+  var parBadge = el('span', 'par-item', name + ' 미설정');
+  parBox.appendChild(parBadge);
+  ref.parBadge = parBadge;
+  var inp = el('input', 'stroke');
+  inp.type = 'text';
+  inp.setAttribute('inputmode', 'numeric');
+  inp.setAttribute('aria-label', name + '홀 타수');
+  inp.dataset.role = 'stroke';
+  inp.addEventListener('input', function () { setStrokes(state, c, i, inp.value); commit(); });
+  row.appendChild(inp);
+  ref.input = inp;
+  var ob = el('div', 'ob');
+  ref.minus = button('ob-btn', '−', name + '홀 OB 감소', function () { state[c][i].ob = obChange(state[c][i].ob, -1); commit(); });
+  ref.obText = el('span', 'ob-count', 'OB 0');
+  ref.plus = button('ob-btn', '+', name + '홀 OB 증가', function () { state[c][i].ob = obChange(state[c][i].ob, 1); commit(); });
+  ref.reset = button('ob-btn ob-reset', '초기화', name + '홀 OB 초기화', function () { state[c][i].ob = 0; commit(); });
+  ob.appendChild(ref.minus);
+  ob.appendChild(ref.obText);
+  ob.appendChild(ref.plus);
+  ob.appendChild(ref.reset);
+  row.appendChild(ob);
+  ref.result = el('span', 'result', '미입력');
+  row.appendChild(ref.result);
+  body.appendChild(row);
+  refs[c].push(ref);
+}
+function buildCourse(c) {
+  var parBox = document.getElementById('par-' + c);
+  var body = document.getElementById('holes-' + c);
+  for (var i = 0; i < HOLES; i++) buildHole(c, i, parBox, body);
+}
+function setSummary(k, a) {
+  setText('par-sum-' + k, a.baseParLabel);
+  setText('sum-' + k, a.total + '타');
+  setText('cnt-' + k, formatCount(a));
+  setText('vs-' + k, a.label);
+}
+function render() {
+  var all = computeAll(state);
+  COURSES.forEach(function (c) {
+    all[c].holes.forEach(function (r, i) {
+      var ref = refs[c][i];
+      var h = state[c][i];
+      if (ref.input.value !== h.strokes) ref.input.value = h.strokes;
+      ref.par.value = h.par;
+      ref.parBadge.textContent = c + (i + 1) + ' ' + (r.par === null ? '미설정' : 'PAR ' + r.par);
+      ref.obText.textContent = 'OB ' + r.ob + (r.ob ? ' (+' + r.penalty + ')' : '');
+      ref.result.textContent = r.text;
+      var bad = r.status === 'invalid';
+      ref.input.classList.toggle('invalid', bad);
+      ref.input.setAttribute('aria-invalid', bad ? 'true' : 'false');
+    });
+    setSummary(c, all[c].agg);
+  });
+  setSummary('T', all.total);
+}
+function storage() {
+  try {
+    if (typeof localStorage !== 'undefined' && localStorage && typeof localStorage.setItem === 'function') return localStorage;
+  } catch (e) {}
+  return null;
+}
+function setStatus(t) { setText('save-status', t); }
+function playerName() { var v = document.getElementById('player-name').value; return v == null ? '' : String(v); }
+function saveGame() {
+  try {
+    var st = storage();
+    if (!st || typeof JSON === 'undefined') throw new Error('storage unavailable');
+    st.setItem(STORAGE_KEY, JSON.stringify(serializeGame(state, playerName(), document.getElementById('play-date').value)));
+    setStatus('자동 저장됨');
+    return true;
+  } catch (e) {
+    setStatus('자동 저장 실패: 이 기기에 저장할 수 없습니다');
+    return false;
+  }
+}
+function loadSaved() {
+  try {
+    var st = storage();
+    if (!st || typeof JSON === 'undefined') return null;
+    var raw = st.getItem(STORAGE_KEY);
+    if (raw == null || raw === '') return null;
+    return deserializeGame(JSON.parse(raw));
+  } catch (e) {
+    return null;
+  }
+}
+function commit() { render(); saveGame(); }
+var defaultDate = '';
+function hasEnteredData() {
+  var dv = document.getElementById('play-date').value;
+  return hasRecords(state) || playerName().trim() !== '' || (dv == null ? '' : String(dv)) !== defaultDate;
+}
+function loadExample() {
+  if (hasEnteredData() && !confirm('기존 기록을 지우고 연습 예시를 불러올까요?')) return;
+  state = applyExample();
+  commit();
+}
+function newGame() {
+  if (hasEnteredData() && !confirm('기존 기록을 지우고 새 경기를 시작할까요?')) return;
+  state = createState();
+  document.getElementById('player-name').value = '';
+  defaultDate = todayISO(new Date());
+  document.getElementById('play-date').value = defaultDate;
+  commit();
+}
+function setSwStatus(t) { setText('sw-status', t); }
+function registerServiceWorker() {
+  try {
+    if (typeof navigator === 'undefined' || !navigator || !('serviceWorker' in navigator) || !navigator.serviceWorker) return false;
+    var proto = (typeof location !== 'undefined' && location) ? String(location.protocol) : '';
+    if (proto !== 'http:' && proto !== 'https:') return false;
+    var sw = navigator.serviceWorker;
+    sw.register('./sw.js', { scope: './' }).then(function () { return sw.ready; }).then(function () {
+      setSwStatus('오프라인 사용 준비 완료');
+    }, function () {
+      setSwStatus('오프라인 사용 준비 실패: 온라인에서는 그대로 사용할 수 있습니다');
+    });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+function init() {
+  buildCourse('A');
+  buildCourse('B');
+  var d = document.getElementById('play-date');
+  var n = document.getElementById('player-name');
+  var saved = loadSaved();
+  if (saved) { state = saved.state; n.value = saved.name; d.value = saved.date; }
+  if (!saved && !d.value) d.value = todayISO(new Date());
+  defaultDate = todayISO(new Date());
+  n.addEventListener('input', saveGame);
+  d.addEventListener('input', saveGame);
+  d.addEventListener('change', saveGame);
+  document.getElementById('load-example').addEventListener('click', loadExample);
+  document.getElementById('new-game').addEventListener('click', newGame);
+  render();
+  if (saved) setStatus('저장된 경기를 불러왔습니다');
+  registerServiceWorker();
+}
+init();
+</script>
+</body>
+</html>
